@@ -719,11 +719,42 @@ static bool replace_file(const char *from, const char *to, const bool force) {
     return (0 == rename(from, to));
 }
 
+static void convert_to_png24(png8_image *img, png24_image *img24)
+{
+    img24->width = img->width;
+    img24->height = img->height;
+    img24->gamma = img->gamma;
+    img24->chunks = img->chunks;
+    img24->rgba_data = malloc(img24->width * img24->height * 4);
+    img24->row_pointers = malloc(img24->height * sizeof(img24->row_pointers[0]));
+    
+    for(size_t row = 0; row < img24->height; row++) {
+        img24->row_pointers[row] = img24->rgba_data + row * img24->width * 4;
+    }
+
+    for (int i = 0; i < img24->width * img24->height; ++i) {
+        liq_palette_index idx = img->indexed_data[i];
+        png_color color = img->palette[idx];
+        img24->rgba_data[i*4+0] = color.red;
+        img24->rgba_data[i*4+1] = color.green;
+        img24->rgba_data[i*4+2] = color.blue;
+        img24->rgba_data[i*4+3] = img->trans[idx];
+    }
+}
+
 static pngquant_error write_image(png8_image *output_image, png24_image *output_image24, const char *outname, struct pngquant_options *options)
 {
     FILE *outfile;
     char *tempname = NULL;
 
+    if (output_image != NULL && output_image->num_palette > 256) {
+        png24_image unpaletted_image = {};
+        convert_to_png24(output_image, &unpaletted_image);
+        pngquant_error retval = write_image(NULL, &unpaletted_image, outname, options);
+        rwpng_free_image24(&unpaletted_image);
+        return retval;
+    }
+    
     if (options->using_stdout) {
         set_binary_mode(stdout);
         outfile = stdout;
@@ -838,7 +869,7 @@ static pngquant_error prepare_output_image(liq_result *result, liq_image *input_
     ** Step 3.7 [GRR]: allocate memory for the entire indexed image
     */
 
-    output_image->indexed_data = malloc(output_image->height * output_image->width);
+    output_image->indexed_data = malloc(output_image->height * output_image->width * sizeof(output_image->indexed_data[0]));
     output_image->row_pointers = malloc(output_image->height * sizeof(output_image->row_pointers[0]));
 
     if (!output_image->indexed_data || !output_image->row_pointers) {

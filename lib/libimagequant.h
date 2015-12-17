@@ -24,12 +24,24 @@
 #endif
 #endif
 
+#ifndef MAX_COLORS
+#define MAX_COLORS 256
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <stddef.h>
 
+#if MAX_COLORS <= 256
+typedef unsigned char liq_palette_index;
+#elif MAX_COLORS <= 65536
+typedef unsigned short liq_palette_index;
+#else
+typedef unsigned long liq_palette_index;
+#endif
+    
 typedef struct liq_attr liq_attr;
 typedef struct liq_image liq_image;
 typedef struct liq_result liq_result;
@@ -40,7 +52,7 @@ typedef struct liq_color {
 
 typedef struct liq_palette {
     unsigned int count;
-    liq_color entries[256];
+    liq_color entries[MAX_COLORS];
 } liq_palette;
 
 typedef enum liq_error {
@@ -100,7 +112,7 @@ LIQ_EXPORT LIQ_USERESULT double liq_get_output_gamma(const liq_result *result) L
 LIQ_EXPORT LIQ_USERESULT const liq_palette *liq_get_palette(liq_result *result) LIQ_NONNULL;
 
 LIQ_EXPORT liq_error liq_write_remapped_image(liq_result *result, liq_image *input_image, void *buffer, size_t buffer_size) LIQ_NONNULL;
-LIQ_EXPORT liq_error liq_write_remapped_image_rows(liq_result *result, liq_image *input_image, unsigned char **row_pointers) LIQ_NONNULL;
+LIQ_EXPORT liq_error liq_write_remapped_image_rows(liq_result *result, liq_image *input_image, liq_palette_index **row_pointers) LIQ_NONNULL;
 
 LIQ_EXPORT double liq_get_quantization_error(liq_result *result) LIQ_NONNULL;
 LIQ_EXPORT int liq_get_quantization_quality(liq_result *result) LIQ_NONNULL;

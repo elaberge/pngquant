@@ -17,6 +17,7 @@ else
 fi
 EXTRA_CFLAGS=
 EXTRA_LDFLAGS=
+MAX_COLORS=256
 
 # make gcc default compiler unless CC is already set
 CC=${CC:-gcc}
@@ -46,6 +47,7 @@ fi
         help "CC=<compiler>                 use given compiler command"
         help "CFLAGS=<flags>                pass options to the compiler"
         help "LDFLAGS=<flags>               pass options to the linker"
+        help "MAX_COLORS=<count>            maximum quantization colors"
         echo
         exit 0
         ;;
@@ -58,6 +60,9 @@ fi
         ;;
     LDFLAGS=*)
         LDFLAGS=${i#*=}
+        ;;
+    MAX_COLORS=*)
+        MAX_COLORS=${i#*=}
         ;;
     --enable-debug)
         DEBUG=1
@@ -413,6 +418,9 @@ if [ "$LCMS2" != 0 ]; then
 else
     status "lcms2" "no"
 fi
+
+cflags "-DMAX_COLORS=$MAX_COLORS"
+status "MAX_COLORS" $MAX_COLORS
 
 echo
 

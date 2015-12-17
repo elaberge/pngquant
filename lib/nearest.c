@@ -31,7 +31,7 @@ typedef struct vp_node {
 struct nearest_map {
     vp_node *root;
     const colormap_item *palette;
-    float nearest_other_color_dist[256];
+    float nearest_other_color_dist[MAX_COLORS];
     mempool mempool;
 };
 

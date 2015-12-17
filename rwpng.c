@@ -489,11 +489,38 @@ static void rwpng_set_gamma(png_infop info_ptr, png_structp png_ptr, double gamm
     png_set_sRGB(png_ptr, info_ptr, 0); // 0 = Perceptual
 }
 
+static unsigned char** rwpng_extract_row_bytes(png8_image* img_ptr)
+{
+    unsigned char* indexed_data = malloc(img_ptr->height * img_ptr->width);
+    unsigned char** row_pointers = malloc(img_ptr->height * sizeof(row_pointers[0]));
+    
+    for(size_t idx = 0; idx < img_ptr->height * img_ptr->width; ++idx) {
+        indexed_data[idx] = (unsigned char) img_ptr->indexed_data[idx];
+    }
+    
+    for(size_t row = 0; row < img_ptr->height; row++) {
+        row_pointers[row] = indexed_data + row * img_ptr->width;
+    }
+
+    return row_pointers;
+}
+
+static void rwpng_free_row_bytes(unsigned char** bytes_rows)
+{
+    free(bytes_rows[0]);
+    free(bytes_rows);
+}
+
 pngquant_error rwpng_write_image8(FILE *outfile, png8_image *mainprog_ptr)
 {
     png_structp png_ptr;
     png_infop info_ptr;
 
+    if (mainprog_ptr->num_palette > 256) {
+        fprintf(stderr, "  error: trying to create an indexed image with more than 256 colors.\n");
+        return -1;
+    }
+    
     pngquant_error retval = rwpng_write_image_init((rwpng_png_image*)mainprog_ptr, &png_ptr, &info_ptr, mainprog_ptr->fast_compression);
     if (retval) return retval;
 
@@ -553,7 +580,9 @@ pngquant_error rwpng_write_image8(FILE *outfile, png8_image *mainprog_ptr)
         png_set_tRNS(png_ptr, info_ptr, mainprog_ptr->trans, mainprog_ptr->num_trans, NULL);
     }
 
-    rwpng_write_end(&info_ptr, &png_ptr, mainprog_ptr->row_pointers);
+    unsigned char **bytes_rows = rwpng_extract_row_bytes(mainprog_ptr);
+    rwpng_write_end(&info_ptr, &png_ptr, bytes_rows);
+    rwpng_free_row_bytes(bytes_rows);
 
     if (SUCCESS == write_state.retval && write_state.maximum_file_size && write_state.bytes_written > write_state.maximum_file_size) {
         return TOO_LARGE_FILE;

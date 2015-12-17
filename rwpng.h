@@ -36,6 +36,8 @@
 #define RWPNG_H
 
 #include "png.h"  /* if this include fails, you need to install libpng (e.g. libpng-devel package) and run ./configure */
+#include "lib/libimagequant.h"
+
 #include <setjmp.h>
 
 #ifndef USE_COCOA
@@ -96,12 +98,12 @@ typedef struct {
     png_uint_32 height;
     png_size_t maximum_file_size;
     double gamma;
-    unsigned char **row_pointers;
-    unsigned char *indexed_data;
+    liq_palette_index **row_pointers;
+    liq_palette_index *indexed_data;
     unsigned int num_palette;
     unsigned int num_trans;
-    png_color palette[256];
-    unsigned char trans[256];
+    png_color palette[MAX_COLORS];
+    unsigned char trans[MAX_COLORS];
     struct rwpng_chunk *chunks;
     char fast_compression;
 } png8_image;

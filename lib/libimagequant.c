@@ -83,7 +83,7 @@ struct liq_image {
     liq_image_get_rgba_row_callback *row_callback;
     void *row_callback_user_info;
     float min_opaque_val;
-    f_pixel fixed_colors[256];
+    f_pixel fixed_colors[MAX_COLORS];
     unsigned short fixed_colors_count;
     bool free_pixels, free_rows, free_rows_internal;
 };
@@ -93,7 +93,7 @@ typedef struct liq_remapping_result {
     void* (*malloc)(size_t);
     void (*free)(void*);
 
-    unsigned char *pixels;
+    liq_palette_index *pixels;
     colormap *palette;
     liq_palette int_palette;
     double gamma, palette_error;
@@ -261,7 +261,7 @@ LIQ_EXPORT LIQ_NONNULL int liq_get_max_quality(const liq_attr *attr)
 LIQ_EXPORT LIQ_NONNULL liq_error liq_set_max_colors(liq_attr* attr, int colors)
 {
     if (!CHECK_STRUCT_TYPE(attr, liq_attr)) return LIQ_INVALID_POINTER;
-    if (colors < 2 || colors > 256) return LIQ_VALUE_OUT_OF_RANGE;
+    if (colors < 2 || colors > MAX_COLORS) return LIQ_VALUE_OUT_OF_RANGE;
 
     attr->max_colors = colors;
     return LIQ_OK;
@@ -441,7 +441,7 @@ LIQ_EXPORT liq_attr* liq_attr_create_with_allocator(void* (*custom_malloc)(size_
         .magic_header = liq_attr_magic,
         .malloc = custom_malloc,
         .free = custom_free,
-        .max_colors = 256,
+        .max_colors = MAX_COLORS,
         .min_opaque_val = 1, // whether preserve opaque colors for IE (1.0=no, does not affect alpha)
         .last_index_transparent = false, // puts transparent color at last index. This is workaround for blu-ray subtitles.
         .target_mse = 0,
@@ -456,7 +456,7 @@ LIQ_EXPORT LIQ_NONNULL liq_error liq_image_add_fixed_color(liq_image *img, liq_c
     if (!CHECK_STRUCT_TYPE(img, liq_image)) return LIQ_INVALID_POINTER;
     if (img->fixed_colors_count > 255) return LIQ_BUFFER_TOO_SMALL;
 
-    float gamma_lut[256];
+    float gamma_lut[MAX_COLORS];
     to_f_set_gamma(gamma_lut, img->gamma);
     img->fixed_colors[img->fixed_colors_count++] = to_f(gamma_lut, (rgba_pixel){
         .r = color.r,
@@ -665,7 +665,7 @@ LIQ_NONNULL static const f_pixel *liq_image_get_row_f(liq_image *img, unsigned i
 {
     if (!img->f_pixels) {
         if (img->temp_f_row) {
-            float gamma_lut[256];
+            float gamma_lut[MAX_COLORS];
             to_f_set_gamma(gamma_lut, img->gamma);
             f_pixel *row_for_thread = img->temp_f_row + img->width * omp_get_thread_num();
             convert_row_to_f(img, row_for_thread, row, gamma_lut);
@@ -681,7 +681,7 @@ LIQ_NONNULL static const f_pixel *liq_image_get_row_f(liq_image *img, unsigned i
             return liq_image_get_row_f(img, row);
         }
 
-        float gamma_lut[256];
+        float gamma_lut[MAX_COLORS];
         to_f_set_gamma(gamma_lut, img->gamma);
         for(unsigned int i=0; i < img->height; i++) {
             convert_row_to_f(img, &img->f_pixels[i*img->width], i, gamma_lut);
@@ -972,7 +972,7 @@ inline static unsigned int posterize_channel(unsigned int color, unsigned int bi
 
 LIQ_NONNULL static void set_rounded_palette(liq_palette *const dest, colormap *const map, const double gamma, unsigned int posterize)
 {
-    float gamma_lut[256];
+    float gamma_lut[MAX_COLORS];
     to_f_set_gamma(gamma_lut, gamma);
 
     dest->count = map->colors;
@@ -1008,7 +1008,7 @@ LIQ_EXPORT LIQ_NONNULL const liq_palette *liq_get_palette(liq_result *result)
     return &result->int_palette;
 }
 
-LIQ_NONNULL static float remap_to_palette(liq_image *const input_image, unsigned char *const *const output_pixels, colormap *const map, const bool fast)
+LIQ_NONNULL static float remap_to_palette(liq_image *const input_image, liq_palette_index *const *const output_pixels, colormap *const map, const bool fast)
 {
     const int rows = input_image->height;
     const unsigned int cols = input_image->width;
@@ -1090,7 +1090,7 @@ inline static f_pixel get_dithered_pixel(const float dither_level, const float m
 
   If output_image_is_remapped is true, only pixels noticeably changed by error diffusion will be written to output image.
  */
-LIQ_NONNULL static void remap_to_palette_floyd(liq_image *input_image, unsigned char *const output_pixels[], const colormap *map, const float max_dither_error, const bool use_dither_map, const bool output_image_is_remapped, float base_dithering_level)
+LIQ_NONNULL static void remap_to_palette_floyd(liq_image *input_image, liq_palette_index *const output_pixels[], const colormap *map, const float max_dither_error, const bool use_dither_map, const bool output_image_is_remapped, float base_dithering_level)
 {
     const unsigned int rows = input_image->height, cols = input_image->width;
     const unsigned char *dither_map = use_dither_map ? (input_image->dither_map ? input_image->dither_map : input_image->edges) : NULL;
@@ -1423,7 +1423,7 @@ LIQ_NONNULL static void contrast_maps(liq_image *image)
  * and peeks 1 pixel above/below. Full 2d algorithm doesn't improve it significantly.
  * Correct flood fill doesn't have visually good properties.
  */
-LIQ_NONNULL static void update_dither_map(unsigned char *const *const row_pointers, liq_image *input_image)
+LIQ_NONNULL static void update_dither_map(liq_palette_index *const *const row_pointers, liq_image *input_image)
 {
     const unsigned int width = input_image->width;
     const unsigned int height = input_image->height;
@@ -1617,7 +1617,7 @@ LIQ_NONNULL static liq_result *pngquant_quantize(histogram *hist, const liq_attr
 
         if (iterations) {
             // likely_colormap_index (used and set in viter_do_iteration) can't point to index outside colormap
-            if (acolormap->colors < 256) for(unsigned int j=0; j < hist->size; j++) {
+            if (acolormap->colors < MAX_COLORS) for(unsigned int j=0; j < hist->size; j++) {
                 if (hist->achv[j].tmp.likely_colormap_index >= acolormap->colors) {
                     hist->achv[j].tmp.likely_colormap_index = 0; // actual value doesn't matter, as the guess is out of date anyway
                 }
@@ -1682,20 +1682,20 @@ LIQ_EXPORT LIQ_NONNULL liq_error liq_write_remapped_image(liq_result *result, li
         return LIQ_INVALID_POINTER;
     }
 
-    const size_t required_size = input_image->width * input_image->height;
+    const size_t required_size = input_image->width * input_image->height * sizeof(liq_palette_index);
     if (buffer_size < required_size) {
         return LIQ_BUFFER_TOO_SMALL;
     }
 
-    unsigned char *rows[input_image->height];
-    unsigned char *buffer_bytes = buffer;
+    liq_palette_index *rows[input_image->height];
+    liq_palette_index *buffer_bytes = buffer;
     for(unsigned int i=0; i < input_image->height; i++) {
         rows[i] = &buffer_bytes[input_image->width * i];
     }
     return liq_write_remapped_image_rows(result, input_image, rows);
 }
 
-LIQ_EXPORT LIQ_NONNULL liq_error liq_write_remapped_image_rows(liq_result *quant, liq_image *input_image, unsigned char **row_pointers)
+LIQ_EXPORT LIQ_NONNULL liq_error liq_write_remapped_image_rows(liq_result *quant, liq_image *input_image, liq_palette_index **row_pointers)
 {
     if (!CHECK_STRUCT_TYPE(quant, liq_result)) return LIQ_INVALID_POINTER;
     if (!CHECK_STRUCT_TYPE(input_image, liq_image)) return LIQ_INVALID_POINTER;
